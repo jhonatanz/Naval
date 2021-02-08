@@ -1,0 +1,284 @@
+---
+title: "Modelo Compresor de Fragata"
+output: 
+  html_document: 
+    toc: true 
+    toc_float:
+      collapsed: false
+    theme: cerulean
+    df_print: paged
+---
+```{r, echo=FALSE}
+htmltools::img(src = knitr::image_uri("logo_horizontal_azul.jpg"), 
+               alt = 'logo',
+               width = '200',
+               height = '80',
+               style = 'float:top')
+```
+---
+## Introducción
+
+En esta demostración se resumen los pasos de un análisis de datos aplicado a un conjunto de datos obtenidos del repositorio de aprendizaje automático de la UCI (University of California, Irvine), [enlace aqui](http://archive.ics.uci.edu/ml/datasets/condition+based+maintenance+of+naval+propulsion+plants) en el que se adquieren los datos de una planta de propulsión de un barco tipo fragata. Los datos disponibles fueron tomados en *estado estable* de la planta.
+
+El objetivo del ejercicio es construir un modelo que permita determinar el grado de degradación del sistema de compresión de la planta a partir de los datos disponibles.
+
+## Conjunto de datos
+
+Los datos están en formato *.csv* en una tabla con 18 columnas y 11934 filas, donde las columnas son variables y las filas son observaciones. Las variables son definidas como:
+
+* Posición de la palanca (lp) [ ]
+* Velocidad de la nave (v) [knots]
+* Torque en el eje de la turbina de gas (GTT) [kN m]
+* Rata de revoluciones de la turbina (GTn) [rpm]
+* Rata de revoluciones del generador (GGn) [rpm]
+* Torque hélice de estribor (Ts) [kN]
+* Torque hélice de puerto (Tp) [kN]
+* Temperatura en la salida de alta presión en la turbina (T48) [C]
+* Temperatura del aire en la entrada del compresor (T1) [C]
+* Temperatura del aire en la salida del compresor (T2) [C]
+* Presión en la salida de la turbina (P48) [bar]
+* Presión de aire en la entrada del compresor (P1) [bar]
+* Presión de aire en la salida del compresor (P2) [bar]
+* Presión de exhosto de gas en la turbina (Pexh) [bar]
+* Control de inyección en la turbina (TIC) [%]
+* Flujo de combustible (mf) [kg/s]
+* Coeficiente de estado de degradación del compresor
+* Coeficiente de estado de degradación de la turbina
+
+Para este caso, la variable *Coeficiente de estado de degradación del compresor* sera la variable *dependiente* sobre la que se van a realizar las predicciones (es la variable de salida del modelo) las demás variables serán *independientes* o *regresores* (variables de entrada al modelo).
+
+## Exploración de los datos 
+
+En esta fase se analizan los datos por medio de graficas y estudio de métricas estadísticas para entender las diferentes relaciones entre las variables, este análisis es importante para:
+
+* El tipo de interacciones entre las variables (relaciones lineales, no lineales, etc)
+* Determinar las variables mas relevantes para la construcción del modelo
+* Preseleccionar las estrategias mas adecuadas para la construcción del modelo
+
+El análisis exploratorio se realizó en las siguientes fases:
+
+### Depuración de los datos
+
+Los datos son depurados de forma que solo queden los que tienen el potencial de aportar información para la construcción del modelo, se eliminan las variables vacías o aquellas con datos nulos, así mismo se eliminan las que tienen varianzas cercanas a cero (es decir, aquellas en las que todos sus valores son iguales):
+
+#### Tabla 1: Conjunto de datos completo
+```{r dep_datos1, echo=FALSE}
+library(knitr)
+NPM<-read.csv("navalplantmaintenance.csv", header = F, sep = " ", na.strings = "")
+vect_NA<-apply(NPM, 2, function(x) mean(is.na(x)))<0.3
+NPM<-NPM[,vect_NA]
+names(NPM)<-c("Lever_pos", "Ship_spd", "GT_shft_trq", "GT_rpm", "Gen_rpm", "S_prop_trq", "P_prop_trq", "Turbine_temp",
+              "Comp_in_temp", "Comp_out_temp","Turbine_press", "Comp_in_press", "Comp_out_press", "Exhaust_press",
+              "Turb_inj_cnt", "Fuel_flow", "Comp_decay", "Turb_decay")
+NPM
+```
+
+Variables que tienen varianza cerca de cero:
+
+```{r dep_datos2, echo=FALSE, comment= "", message=F}
+library(caret)
+a<-nearZeroVar(NPM)
+print(names(NPM[,a]))
+NPM<-NPM[, -a]
+NPM$Lever_pos<-as.factor(NPM$Lever_pos)
+```
+
+Las cuales son eliminadas del conjunto de datos.
+
+### Graficas Exploratorias {.tabset .tabset-fade .tabset-pills}
+
+**Haga click en cada "tab" para ver las graficas**
+
+#### Graficas de datos completos
+
+Los datos son explorados ahora observando graficas que representan las relaciones entre la distintas variables:
+
+```{r graf_p1_1, fig.cap= "DEGRADACIÓN DEL COMPRESOR: Se observa el comportamiento de coeficiente de decaimiento del compresor versus las revoluciones por minuto de la turbina", fig.width= 9, echo=F}
+par(mfrow=c(1, 2))
+plot(NPM$Turbine_temp, NPM$Comp_decay, main = "Sin distincion de color", 
+     xlab = "RPM de la turbina", ylab = "Coef. Decaimiento")
+plot(NPM$Turbine_temp, NPM$Comp_decay, col = NPM$GT_rpm, main = "Color según la posición de la palanca", 
+     xlab = "RPM de la turbina", ylab = "Coef. Decaimiento")
+```
+
+De la anterior grafica se puede observar que los datos están fuertemente relacionados con la posición de la palanca, esto se repite en todas las variables del conjunto de datos:
+
+```{r graf_p1_2, fig.cap= "DEGRADACIÓN DEL COMPRESOR: Se observa el comportamiento de coeficiente de decaimiento del compresor versus diferentes variables", fig.width= 9, fig.height=6.5, echo=F}
+par(mfrow=c(2, 2))
+plot(NPM$Turb_inj_cnt, NPM$Comp_decay, col = NPM$Lever_pos, xlab = "Control de Inyección", ylab = "Coef. Decaimiento")
+plot(NPM$Comp_out_press, NPM$Comp_decay, col = NPM$Lever_pos, xlab = "Presión de salida compresor", ylab = "Coef. Decaimiento")
+plot(NPM$Exhaust_press, NPM$Comp_decay, col = NPM$Lever_pos, xlab = "Presión de gas exhosto", ylab = "Coef. Decaimiento")
+plot(NPM$Fuel_flow, NPM$Comp_decay, col = NPM$Lever_pos, xlab = "Flujo de combustible", ylab = "Coef. Decaimiento")
+```
+
+**Conclusión:** Se deben estudiar los datos segregados por cada posición de la palanca de mando.
+
+#### Relaciones no lineales
+
+Estudiando el conjunto de datos segregado por cada posición de la palanca de mando se encuentran relaciones no lineales, en este caso se muestran algunas relación para el conjunto de datos que corresponde a la primera posición de la palanca de mando (1.138):
+
+```{r graf_p2_1, fig.cap= "Graficas del comportamiento de algunas de las variables, el nombre en la columna corresponde a la variable independiente, mientras que el nombre en la fila corresponde a la variable dependiente ", fig.width= 9, fig.height=6.5, echo=F, message=F}
+library(dplyr)
+df1 <- NPM %>% filter(Lever_pos == levels(Lever_pos)[1])
+a<-nearZeroVar(df1)
+df1<-df1[,-a]
+sel<-c("GT_rpm", "Gen_rpm", "Comp_out_temp", "Turbine_press", "Turb_inj_cnt")
+pairs(select(df1, all_of(sel)), main = "Variables con comportamientos no lineales")
+```
+
+**Conclusión:** Se deben estudiar modelos que puedan captar relaciones no lineales.
+
+#### Relaciones lineales
+
+Así mismo, se tienen relaciones lineales entre variables:
+
+```{r graf_p2_2, fig.cap= "Graficas del comportamiento de algunas de las variables, el nombre en la columna corresponde a la variable independiente, mientras que el nombre en la fila corresponde a la variable dependiente ", fig.width= 9, fig.height=6.5, echo=F, message=F}
+sel<-c("Fuel_flow", "Comp_out_press", "Comp_out_temp", "Turbine_temp", "Turbine_press")
+pairs(select(df1, all_of(sel)), main = "Variables con relaciones lineales")
+```
+
+**Conclusión:** Debe tenerse en cuenta que tantas variables con relaciones lineales son superfluas y añaden complejidad innecesaria al modelo, dado que su correlación es alta se debe proponer la eliminación de alguna de estas variables.
+
+### Selección de Variables
+
+En las anteriores secciones se ha encontrado que hay la posibilidad de que muchas variables tengan fuertes relaciones lineales entre si, esta interdependencia es contraproducente porque aumenta la complejidad del modelo pero no aporta información relevante, se hace un análisis estadístico para identificar las variables mas relevantes.
+
+#### Tabla 2: Factor de inflación de varianza, conjunto de datos completo
+```{r sel_p1, message= F, echo=F}
+library(car)
+df1_norm<-apply(df1, 2, function(x) (x-mean(x))/sd(x))
+df1_norm<-as.data.frame(df1_norm)
+fit_dfn<-lm(Comp_decay~.-Turb_decay-P_prop_trq, data = df1_norm)
+kable(vif(fit_dfn), caption = "Las variables mas correlacionadas tienen los valores mas altos porque aportan mas variabilidad, las cuales son candidatas a ser eliminadas del modelo", align = 'c', digits = 0, col.names = c("Variabilidad"))
+```
+
+Se consideran que valores por encima de 10 o 20 pueden ser problemáticos, en este caso se tienen variables con valores de hasta 17000. Después de la selección se obtiene:
+
+#### Tabla 3: Factor de inflación de varianza, conjunto de datos parcial
+```{r sel_p2, message=F, echo=F}
+fit_dfn<-lm(Comp_decay~.-Turb_decay-P_prop_trq-Turbine_temp-S_prop_trq-Comp_out_press-Fuel_flow-GT_shft_trq, data = df1_norm)
+kable(vif(fit_dfn), caption = "Después de la selección se observan valores de variabilidad menores a los originales, las variables aquí listadas son usadas para construir el modelo final", align = 'c', digits = 0, col.names = c("Variabilidad"))
+```
+
+## Construcción del modelo
+
+### Segregación de datos {.tabset .tabset-fade .tabset-pills}
+
+Los modelos se *entrenarán* usando las variables seleccionadas. Para poder medir el desempeño real de los modelos, los datos se dividen en dos partes, el 75% de los datos se usan para el entrenamiento de los modelos, mientras que el 25% restante se usa para observar el comportamiento de estos frente a datos que no son conocidos.
+
+**NOTA 1:** Hay que tener en cuenta que los datos usados fueron segregados previamente en el análisis de graficas exploratorias, en donde se determino que los datos se iban a separar según la posición de la palanca de mando, por esta razón, aunque el conjunto de datos original tiene cerca de 12000 observaciones, los datos que estamos usando son solo 1326 que corresponden a la primera posición de la palanca. En ese mismo sentido se debe tener en cuenta que para las otras posiciones se deben entrenar modelos distintos con sus respectivos datos.
+
+Esta segregación se realiza haciendo muestreos aleatorios de las observaciones, la segregación se ilustra en las tablas a continuación:
+
+**Hacer click en cada Tab**
+
+#### Conjunto de datos completo (Nota 1)
+```{r const_mdl_p1, comment="", echo=F}
+df1
+```
+
+#### Conjunto de entrenamiento
+Después de la segregación se tiene:
+
+```{r const_mdl_p2, comment="", echo=F}
+vec_tr <- createDataPartition(y = df1$Comp_decay, p = 0.75, list = F)
+df1_tr <- df1[vec_tr,]
+df1_te <- df1[-vec_tr,]
+df1_tr
+```
+
+#### Conjunto de prueba
+
+```{r const_mdl_p3, comment="", echo=F}
+df1_te
+```
+
+
+### Entrenamiento {.tabset .tabset-fade .tabset-pills}
+
+Con el conjunto de datos de entrenamiento se entrenan cuatro modelos distintos con grados de complejidad diferentes:
+
+#### Modelo lineal
+
+```{r entr_modl_p1, comment="", echo=F}
+fit_df1_l <- lm(Comp_decay~GT_rpm+Gen_rpm+Comp_out_temp+Turbine_press+Turb_inj_cnt, data = df1_tr)
+summary(fit_df1_l)
+```
+
+#### Modelo No lineal #1
+
+```{r entr_modl_p2, comment="", echo=F}
+library(splines)
+fit_df1_nl1 <- lm(lm(Comp_decay~ns(GT_rpm, 3)+ns(Gen_rpm, 3)+ns(Comp_out_temp, 3)+ns(Turbine_press, 3)+Turb_inj_cnt, data = df1_tr))
+summary(fit_df1_nl1)
+```
+
+#### Modelo No lineal #2
+
+```{r entr_modl_p3, comment="", echo=F}
+fit_df1_nl2 <- lm(lm(Comp_decay~ns(GT_rpm, 4)+ns(Gen_rpm, 4)+ns(Comp_out_temp, 4)+ns(Turbine_press, 4)+Turb_inj_cnt, data = df1_tr))
+summary(fit_df1_nl2)
+```
+
+#### Modelo No lineal #3
+
+```{r entr_modl_p4, comment="", echo=F}
+fit_df1_nl3 <- lm(lm(Comp_decay~ns(GT_rpm, 5)+ns(Gen_rpm, 5)+ns(Comp_out_temp, 5)+ns(Turbine_press, 5)+Turb_inj_cnt, data = df1_tr))
+summary(fit_df1_nl3)
+```
+
+### Medición de desempeño {.tabset .tabset-fade .tabset-pills}
+
+#### Selección de complejidad
+Se hace una comparación en la relevancia del aumento de complejidad del modelo versus la disminución del error de las predicciones:
+
+```{r desemp_p1, comment="", echo=F}
+kable(anova(fit_df1_l, fit_df1_nl1, fit_df1_nl2, fit_df1_nl3), caption = "En la columna Pr(>F) se tiene una medición de la significancia de la disminución del error de predicción entre dos modelos, entre menor el numero mayor la significancia", align = 'c')
+```
+
+Se puede observar que el ultimo modelo (modelo No lineal #3) no representa un aumento significativo en la disminución del error (el Pr(>F) es aproximadamente igual a 0.05 o mayor), por lo que la complejidad del modelo no se requiere aumentar mas allá de lo definido en el Modelo No lineal #2.
+
+#### Comparación de las predicciones
+
+```{r desemp_p2, comment="", echo=F}
+pred_df1_l <- predict(fit_df1_l, newdata = df1_te)
+pred_df1_nl1 <- predict(fit_df1_nl1, newdata = df1_te)
+pred_df1_nl2 <- predict(fit_df1_nl2, newdata = df1_te)
+pred_df1_nl3 <- predict(fit_df1_nl3, newdata = df1_te)
+comp <- data.frame("Comp_decay" = df1_te$Comp_decay, 
+                   "pred_mdl_l" = round(pred_df1_l, digits = 3), 
+                   "perc_mdl_l" = 100*(df1_te$Comp_decay-pred_df1_l)^2/df1_te$Comp_decay,
+                   "pred_mdl_nl1" = round(pred_df1_nl1, 3),
+                   "perc_mdl_nl1" = 100*(df1_te$Comp_decay-pred_df1_nl1)^2/df1_te$Comp_decay,
+                   "pred_mdl_nl2" = round(pred_df1_nl2, 3),
+                   "perc_mdl_nl2" = 100*(df1_te$Comp_decay-pred_df1_nl2)^2/df1_te$Comp_decay,
+                   "pred_mdl_nl3" = round(pred_df1_nl3, 3),
+                   "perc_mdl_nl3" = 100*(df1_te$Comp_decay-pred_df1_nl3)^2/df1_te$Comp_decay
+                   )
+select(comp, ! all_of(c("perc_mdl_l", "perc_mdl_nl1", "perc_mdl_nl2", "perc_mdl_nl3")))
+```
+
+#### Errores de predicción
+
+```{r desemp_p3, comment="", echo=F}
+perc_mean <- apply(select(comp, perc_mdl_l, perc_mdl_nl1, perc_mdl_nl2, perc_mdl_nl3), 2, function(x) mean(x))
+names(perc_mean) <- c("mdl_l", "mdl_nl1", "mdl_nl2", "mdl_nl3")
+kable(perc_mean, caption = "Se observa la disminucion en el error de prediccion a medida que se aumenta la complejidad del modelo, observese sin embargo, que lo anterior no es cierto para el modelo no lineal #3", align = 'c')
+```
+
+El fenómeno por el cual modelos mas complejos llevan a errores de predicción mas grandes se conoce como *overfitting*, y se debe a que los modelos complejos tienden a imitar los valores del conjunto de datos de entrenamiento *de forma mas exacta*, pero de paso aumenta el comportamiento errático de la función que describe los datos de entrenamiento. Lo anterior deriva en que cuando se van a hacer predicciones de datos que no se conocen el modelo presenta mayor error de predicción.
+
+## Conclusiones
+
+El modelo no lineal # 2 es el que mejor comportamiento presenta para la predicción del comportamiento del sistema del cual se han obtenido los datos.
+
+Esta conclusión se ha obtenido después de:
+
+* Selección de un objetivo para el análisis: la información que subyace en un conjunto de datos es muy amplia y puede servir para muchas cosas distintas, se requiere delimitar el objeto de estudio para poder:
+  + Valorar si la calidad y la cantidad de datos es suficiente para conseguir el objetivo
+  + Determinar si las variables contenidas en el conjunto de datos son las adecuadas para conseguir el objetivo
+* Análisis exploratorio de datos en los que por medio de graficas y mediciones estadísticas se determinan las características mas relevantes que el modelo debe tener.
+* Análisis estadístico (Inferencia), donde se verifican las hipótesis establecidas en el análisis exploratorio y se hace la selección de las variables mas adecuadas para la construcción del modelo.
+* Entrenamiento y medición de desempeño de diferentes modelos candidatos para la predicción de datos.
+
+El paso final es la selección del modelo final e implementación.
