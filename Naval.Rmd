@@ -39,7 +39,7 @@ Los datos están en formato *.csv* en una tabla con 18 columnas y 11934 filas, d
 * Presión en la salida de la turbina (P48) [bar]
 * Presión de aire en la entrada del compresor (P1) [bar]
 * Presión de aire en la salida del compresor (P2) [bar]
-* Presión de exhosto de gas en la turbina (Pexh) [bar]
+* Presión de exosto de gas en la turbina (Pexh) [bar]
 * Control de inyección en la turbina (TIC) [%]
 * Flujo de combustible (mf) [kg/s]
 * Coeficiente de estado de degradación del compresor
@@ -49,7 +49,7 @@ Para este caso, la variable *Coeficiente de estado de degradación del compresor
 
 ## Exploración de los datos 
 
-En esta fase se analizan los datos por medio de graficas y estudio de métricas estadísticas para entender las diferentes relaciones entre las variables, este análisis es importante para:
+En esta fase se analizan los datos por medio de gráficas y estudio de métricas estadísticas para entender las diferentes relaciones entre las variables, este análisis es importante para:
 
 * El tipo de interacciones entre las variables (relaciones lineales, no lineales, etc)
 * Determinar las variables mas relevantes para la construcción del modelo
@@ -87,11 +87,11 @@ Las cuales son eliminadas del conjunto de datos.
 
 ### Graficas Exploratorias {.tabset .tabset-fade .tabset-pills}
 
-**Haga click en cada "tab" para ver las graficas**
+**Haga click en cada "tab" para ver las gráficas**
 
 #### Graficas de datos completos
 
-Los datos son explorados ahora observando graficas que representan las relaciones entre la distintas variables:
+Los datos son explorados ahora observando gráficas que representan las relaciones entre la distintas variables:
 
 ```{r graf_p1_1, fig.cap= "DEGRADACIÓN DEL COMPRESOR: Se observa el comportamiento de coeficiente de decaimiento del compresor versus las revoluciones por minuto de la turbina", fig.width= 9, echo=F}
 par(mfrow=c(1, 2))
@@ -166,7 +166,7 @@ kable(vif(fit_dfn), caption = "Después de la selección se observan valores de 
 
 Los modelos se *entrenarán* usando las variables seleccionadas. Para poder medir el desempeño real de los modelos, los datos se dividen en dos partes, el 75% de los datos se usan para el entrenamiento de los modelos, mientras que el 25% restante se usa para observar el comportamiento de estos frente a datos que no son conocidos.
 
-**NOTA 1:** Hay que tener en cuenta que los datos usados fueron segregados previamente en el análisis de graficas exploratorias, en donde se determino que los datos se iban a separar según la posición de la palanca de mando, por esta razón, aunque el conjunto de datos original tiene cerca de 12000 observaciones, los datos que estamos usando son solo 1326 que corresponden a la primera posición de la palanca. En ese mismo sentido se debe tener en cuenta que para las otras posiciones se deben entrenar modelos distintos con sus respectivos datos.
+**NOTA 1:** Hay que tener en cuenta que los datos usados fueron segregados previamente en el análisis de gráficas exploratorias, en donde se determino que los datos se iban a separar según la posición de la palanca de mando, por esta razón, aunque el conjunto de datos original tiene cerca de 12000 observaciones, los datos que estamos usando son solo 1326 que corresponden a la primera posición de la palanca. En ese mismo sentido se debe tener en cuenta que para las otras posiciones se deben entrenar modelos distintos con sus respectivos datos.
 
 Esta segregación se realiza haciendo muestreos aleatorios de las observaciones, la segregación se ilustra en las tablas a continuación:
 
@@ -277,7 +277,7 @@ Esta conclusión se ha obtenido después de:
 * Selección de un objetivo para el análisis: la información que subyace en un conjunto de datos es muy amplia y puede servir para muchas cosas distintas, se requiere delimitar el objeto de estudio para poder:
   + Valorar si la calidad y la cantidad de datos es suficiente para conseguir el objetivo
   + Determinar si las variables contenidas en el conjunto de datos son las adecuadas para conseguir el objetivo
-* Análisis exploratorio de datos en los que por medio de graficas y mediciones estadísticas se determinan las características mas relevantes que el modelo debe tener.
+* Análisis exploratorio de datos en los que por medio de gráficas y mediciones estadísticas se determinan las características mas relevantes que el modelo debe tener.
 * Análisis estadístico (Inferencia), donde se verifican las hipótesis establecidas en el análisis exploratorio y se hace la selección de las variables mas adecuadas para la construcción del modelo.
 * Entrenamiento y medición de desempeño de diferentes modelos candidatos para la predicción de datos.
 
