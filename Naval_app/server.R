@@ -16,17 +16,8 @@ mdl_df9 <- readRDS("mdl_df9.RDS")
 
 # se combinan todos los modelos en una sola lista
 
-modelos<-list(
-  mdl_df1,
-  mdl_df2,
-  mdl_df3,
-  mdl_df4,
-  mdl_df5,
-  mdl_df6,
-  mdl_df7,
-  mdl_df8,
-  mdl_df9
-)
+modelos<-list(mdl_df1, mdl_df2, mdl_df3, mdl_df4, mdl_df5, mdl_df6, mdl_df7,
+              mdl_df8, mdl_df9)
 
 # Carga de los datos de prueba
 NPM_te<-read.csv("test.csv")
@@ -41,7 +32,7 @@ comb <- function (b, mini, maxi){
     temp2<-temp1[sample(nrow(temp1), size = 1),]
     ind<-temp2$Ship_spd/3
     temp3<-predict(modelos[[ind]], newdata = temp2)
-    acum <- acum + temp3*60
+    acum <- acum + temp3*6*60
     temp4<-mutate(temp2, "pred" = temp3, "f_acum" = acum, "t" = i)
     y<-rbind(y, temp4)
   }
@@ -55,17 +46,24 @@ server <- function(input, output) {
   datos3 <- reactiveValues(v_vel = 3, t1 = 0, t2 =0, l_t = 0, f_f = 0, f_a = 0)
   tabla <- reactiveVal(value = 0)
   observeEvent(input$reset, {
-    datos$v_vel <- 3
-    datos$t1 <- 0
-    datos$t2 <- 0
-    datos$l_t <- 0
-    datos$f_f <- 0
-    datos$f_a <- 0
+    datos$v_vel <- 3; datos$t1 <- 0; datos$t2 <- 0; datos$l_t <- 0
+    datos$f_f <- 0; datos$f_a <- 0
+    
+    datos1$v_vel <- 3; datos1$t1 <- 0; datos1$t2 <- 0; datos1$l_t <- 0
+    datos1$f_f <- 0; datos1$f_a <- 0
+    
+    datos2$v_vel <- 3; datos2$t1 <- 0; datos2$t2 <- 0; datos2$l_t <- 0
+    datos2$f_f <- 0; datos2$f_a <- 0
+    
+    datos3$v_vel <- 3; datos3$t1 <- 0; datos3$t2 <- 0; datos3$l_t <- 0
+    datos3$f_f <- 0; datos3$f_a <- 0
+    
+    tabla(0)
   })
-  # codigo para guardar segmentos de operacion
+  # codigo para guardar segmentos de operacion, se sacan 10 muestras por cada hora, es decir, cada 6 minutos
   observeEvent(input$save, {
-    datos$v_vel <- c(datos$v_vel, rep_len(input$vel, 60*input$t))
-    datos$t1 <- c(datos$t1, seq(from = datos$l_t + 1/60, to = datos$l_t + input$t, by = 1/60))
+    datos$v_vel <- c(datos$v_vel, rep_len(input$vel, 10*input$t))
+    datos$t1 <- c(datos$t1, seq(from = datos$l_t + 1/10, to = datos$l_t + input$t, by = 1/10))
     datos$l_t<-datos$t1[length(datos$t1)]
   })
   
@@ -74,21 +72,21 @@ server <- function(input, output) {
     y <- comb(datos$v_vel, 0.975, 1)
     datos$f_f<-y$pred
     datos$f_a<-y$f_acum
-    datos$t2<-datos$t1
+    datos$t2<-y$t/10
   })
   observeEvent(input$load2, {
     a <- comb(datos$v_vel, 0.975, 0.981)
     datos1$f_f<-a$pred
     datos1$f_a<-a$f_acum
-    datos1$t2<-a$t
+    datos1$t2<-a$t/10
     b <- comb(datos$v_vel, 0.981, 0.994)
     datos2$f_f<-b$pred
     datos2$f_a<-b$f_acum
-    datos2$t2<-b$t
+    datos2$t2<-b$t/10
     c <- comb(datos$v_vel, 0.994, 1)
     datos3$f_f<-c$pred
     datos3$f_a<-c$f_acum
-    datos3$t2<-c$t
+    datos3$t2<-c$t/10
     tabla(rbind(summarize(a, consumo = round(max(f_acum)), min_decay = min(Turb_decay), max_decay = max(Turb_decay)),
               summarize(b, consumo = round(max(f_acum)), min_decay = min(Turb_decay), max_decay = max(Turb_decay)),
               summarize(c, consumo = round(max(f_acum)), min_decay = min(Turb_decay), max_decay = max(Turb_decay))
@@ -111,16 +109,22 @@ server <- function(input, output) {
          xlab = "Tiempo [horas]", ylab = "Velocidad [nudos]")
   })
   output$plot_fuel <- renderPlot({
-    plot(datos1$t2, datos1$f_f, col = "red", main = "Grafica de Flujo de Combustible", 
+    plot(datos1$t2, datos1$f_f, type= "l", col = "red", main = "Grafica de Flujo de Combustible", 
          xlab = "Tiempo [horas]", ylab = "Flujo [Kg/s]")
-    points(datos2$t2, datos2$f_f, col = "blue")
-    points(datos3$t2, datos3$f_f, col = "green")
+    lines(datos2$t2, datos2$f_f, col = "blue")
+    lines(datos3$t2, datos3$f_f, col = "green")
+    legend("topright", legend = c("bad", "fair", "good"), 
+           col = c("red", "blue", "green"), pch = 1, title = "Condición")
   })
   output$plot_int <- renderPlot({
-    plot(datos1$t2, datos1$f_a, type = "l", col= "red", main = "Consumo Acumulado por coeficiente de decaimiento", 
+    plot(datos1$t2, datos1$f_a, type = "l", col= "red",
+         main = "Consumo Acumulado por coeficiente de decaimiento", 
          xlab = "Tiempo [horas]", ylab = "Combustible [Kg]")
     lines(datos2$t2, datos2$f_a, col = "blue")
     lines(datos3$t2, datos3$f_a, col = "green")
+    legend("bottomright", legend = c("bad", "fair", "good"), 
+           col = c("red", "blue", "green"), lty = 1, lwd = 1, 
+           title = "Condición")
   })
   # impresion de valores
   output$f_acum <- renderText({
