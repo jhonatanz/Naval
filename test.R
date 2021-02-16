@@ -1,5 +1,6 @@
 library(splines)
 library(dplyr)
+library(purrr)
 mdl_df1 <- readRDS("Naval_app/mdl_df1.RDS")
 mdl_df2 <- readRDS("Naval_app/mdl_df2.RDS")
 mdl_df3 <- readRDS("Naval_app/mdl_df3.RDS")
@@ -64,3 +65,20 @@ comb2 <- function (b, mini, maxi){
 z2<-comb2(b, 0.975, 0.981)
 d2<-comb2(b, 0.981, 0.994)
 f2<-comb2(b, 0.994, 1)
+
+
+b<-tibble(v=c(3, 6, 9, 12), t=c(1, 1, 1, 1))
+mini<-0.975
+maxi<-1
+
+comb1 <- function(v, t, mini, maxi){
+  temp1<-filter(NPM_te, Ship_spd == v & Turb_decay > mini & Turb_decay <= maxi)
+  temp2<-temp1[sample(nrow(temp1), size = 60*t, replace = T),]
+  pred<-predict(modelos[[v/3]], newdata = temp2)
+  temp3<-mutate(temp2, pred = pred)
+  return(temp3)
+}
+
+test<-map2(b$v, b$t, comb1, mini, maxi)%>%
+  bind_rows()%>%
+  mutate(acum = cumsum(60*pred), t=(1:length(pred))/60)
