@@ -22,38 +22,42 @@ modelos<-list(mdl_df1, mdl_df2, mdl_df3, mdl_df4, mdl_df5, mdl_df6, mdl_df7,
 
 # Carga de los datos de prueba
 NPM_te<-read.csv("test.csv")
+NPM_te <- NPM_te %>%
+  mutate(NPM_te, cond = as.factor(if_else(Turb_decay < 0.981, "mala", 
+                                          if_else(Turb_decay >= 0.981 & Turb_decay <0.994, 
+                                                  "normal", "optima"))))
+NPM_te$Ship_spd <- as.factor(NPM_te$Ship_spd)
 
-comb1 <- function(v, t, mini, maxi){
+comb1 <- function(v, t, condicion){
   # Función para la construcción de un data frame con muestras de NPM_te
   # a partir de dos vectores que contienen las velocidades y el tiempo de
   # operación a dicha velocidad que forman una estrategia operativa
-  temp1<-filter(NPM_te, Ship_spd == v & Turb_decay > mini & Turb_decay <= maxi)
+  temp1<-filter(NPM_te, Ship_spd == v & cond == condicion)
   temp2<-temp1[sample(nrow(temp1), size = 60*t, replace = T),]
   pred<-predict(modelos[[v/3]], newdata = temp2)
-  out<-mutate(temp2, pred = pred)
-  return(out)
+  temp3<-mutate(temp2, pred = pred)
+  return(temp3)
 }
+
 
 server <- function(input, output) {
   # inicialización y definición de datos
   datos <- reactiveValues(op = tibble(v=0, t=0), ent = tibble(v=0, t=0), 
-                          sal = tibble(acum = 0, t1 = 0, v= 0))
-  datos1 <- reactiveValues(sal = tibble(acum = 0, t1 = 0, v= 0))
-  datos2 <- reactiveValues(sal = tibble(acum = 0, t1 = 0, v= 0))
-  datos3 <- reactiveValues(sal = tibble(acum = 0, t1 = 0, v= 0))
+                          sal = tibble(acum = 0, t = 0, v= 0, cond = 0, 
+                                       media = 0, pred = 0, Turbine_temp = 0,
+                                       Ship_spd = 0)
+                          )
+
   tabla <- reactiveVal(value = 0)
   
   # Funcionamiento del boton de reset
   observeEvent(input$reset, {
     
-    datos$op = tibble(v=0, t=0); datos$ent = tibble(v=0, t=0)
-    
-    datos$sal = tibble(acum = 0, t1 = 0, v= 0)
-    datos1$sal = tibble(acum = 0, t1 = 0, v= 0)
-    datos2$sal = tibble(acum = 0, t1 = 0, v= 0)
-    datos3$sal = tibble(acum = 0, t1 = 0, v= 0)
-    
+    datos$op = tibble(v=0, t=0); 
+    datos$ent = tibble(v=0, t=0)
+    datos$sal = tibble(acum = 0, t = 0, v= 0, cond = 0, media = 0, pred = 0)
     tabla(0)
+    
   })
   
   # codigo para guardar y graficar segmentos de operacion.
@@ -62,7 +66,6 @@ server <- function(input, output) {
     d_m <- tibble(v=input$vel, t=datos$op$t[length(datos$op$t)])
     datos$op <- rbind(datos$op, d_m, d_in)
     datos$ent <- rbind(datos$ent, tibble(v=input$vel, t=input$t))
-    print(length((datos$ent$v)))
   })
   
   # calculos de consumo de combustible
@@ -70,86 +73,102 @@ server <- function(input, output) {
     if(length(datos$ent$v)<2){
       showNotification("DEBE INTRODUCIR UN SEGMENTO OPERATIVO", type = "error", duration = 10)
     } else {
-      x <- datos$ent[-1,]
-      datos$sal<-map2(x$v, x$t, comb1, 0.975, 1)%>%
-        bind_rows()%>% #convierte la lista de df a un solo df unido
-        mutate(acum = cumsum(60*pred), t1=(1:length(pred))/60)
+      
+      # Construccion de data frame para las diferentes condiciones posibles (mala, normal y optima en la variable "cond")
+      ent <- datos$ent[-1,]
+      x <- list()
+      for(i in levels(NPM_te$cond)){
+        x[[i]]<-map2(ent$v, ent$t, comb1, i)%>%
+          bind_rows()%>%
+          mutate(acum = cumsum(60*pred), t=(1:length(pred))/60)%>%
+          group_by(Ship_spd)%>%
+          mutate(media = mean(pred))
+      }
+      df<-bind_rows(x)
+      
+      df1<-df%>%
+        group_by("Condición" = cond)%>%
+        summarize("Consumo" = round(max(acum)))%>%
+        mutate("Costo COP" = round(Consumo*2191/0.850))
+      
+      datos$sal <- df
+      tabla(df1)
     }
-    
   })
-  
-  # calculos para comparar desempeño versus decaimiento
-  observeEvent(input$load2, {
-    if(length(datos$ent$v)<2){
-      showNotification("DEBE INTRODUCIR UN SEGMENTO OPERATIVO", type = "error", duration = 10)
-    } else {
-      x <- datos$ent[-1,]
-      datos1$sal<-map2(x$v, x$t, comb1, 0.975, 0.981)%>%
-        bind_rows()%>% 
-        mutate(acum = cumsum(60*pred), t1=(1:length(pred))/60)
-      
-      x <- datos$ent[-1,]
-      datos2$sal<-map2(x$v, x$t, comb1, 0.981, 0.994)%>%
-        bind_rows()%>%
-        mutate(acum = cumsum(60*pred), t1=(1:length(pred))/60)
-      
-      x <- datos$ent[-1,]
-      datos3$sal<-map2(x$v, x$t, comb1, 0.994, 1)%>%
-        bind_rows()%>%
-        mutate(acum = cumsum(60*pred), t1=(1:length(pred))/60)
-      
-      tabla(rbind(summarize(datos1$sal, consumo = round(max(acum)), 
-                            min_decay = min(Turb_decay), 
-                            max_decay = max(Turb_decay)),
-                  summarize(datos2$sal, consumo = round(max(acum)), 
-                            min_decay = min(Turb_decay), 
-                            max_decay = max(Turb_decay)),
-                  summarize(datos3$sal, consumo = round(max(acum)), 
-                            min_decay = min(Turb_decay), 
-                            max_decay = max(Turb_decay))
-      )
-      )
-    }
-    
-  })
-  
+
   #ploteo de graficas
   
   # tab 1
   output$plot_spd <- renderPlot({
-    plot(datos$op$t, datos$op$v, type = 'l', main = "Gráfica de operación", 
-         xlab = "Tiempo [horas]", ylab = "Velocidad [nudos]")
+    ggplot(data = datos$op)+
+      geom_line(mapping = aes(x=t, y=v))+
+      labs(x = "Tiempo [horas]", y = "Velocidad [nudos]",
+           title ="OPERACIÓN"
+           #subtitle = "Add a subtitle below title",
+           #caption = "Add a caption below plot"
+      )
+    #plot(datos$op$t, datos$op$v, type = 'l', main = "Gráfica de operación", 
+         #xlab = "Tiempo [horas]", ylab = "Velocidad [nudos]")
   })
   output$plot_acum <- renderPlot({
-    plot(datos$sal$t1, datos$sal$acum, type = "l", main = "Consumo Acumulado", 
-         xlab = "Tiempo [horas]", ylab = "Combustible [Kg]")
+    ggplot(data = datos$sal)+
+      geom_line(mapping = aes(x=t, y=acum, color = cond))+
+      labs(x = "Tiempo [horas]", y = "Combustible [Kg]",
+           title ="CONSUMO ACUMULADO"
+           #subtitle = "Add a subtitle below title",
+           #caption = "Add a caption below plot"
+      )
+    #plot(datos$sal$t1, datos$sal$acum, type = "l", main = "Consumo Acumulado", 
+    #     xlab = "Tiempo [horas]", ylab = "Combustible [Kg]")
   })
+  
   # tab 2
   output$plot_spd_2 <- renderPlot({
-    plot(datos$op$t, datos$op$v, type = 'l', main = "Gráfica de operación", 
-         xlab = "Tiempo [horas]", ylab = "Velocidad [nudos]")
+    ggplot(data = datos$op)+
+      geom_line(mapping = aes(x=t, y=v))+
+      labs(x = "Tiempo [horas]", y = "Velocidad [nudos]",
+           title ="OPERACIÓN")
   })
   output$plot_fuel <- renderPlot({
-    plot(datos1$sal$t1, datos1$sal$pred, type= "l", col = "red", main = "Grafica de Flujo de Combustible", 
-         xlab = "Tiempo [horas]", ylab = "Flujo [Kg/s]")
-    lines(datos2$sal$t1, datos2$sal$pred, col = "blue")
-    lines(datos3$sal$t1, datos3$sal$pred, col = "green")
-    legend("topleft", legend = c("mala", "media", "buena"), 
-           col = c("red", "blue", "green"), pch = 1, title = "Condición")
+    ggplot(data = datos$sal)+
+      geom_line(mapping = aes(x=t, y=pred, color = cond))+
+      labs(x = "Tiempo [horas]", y = "Flujo de Combustible [Kg/s]",
+           title ="FLUJO INSTANTANEO DE COMBUSTIBLE")
   })
-  output$plot_int <- renderPlot({
-    plot(datos1$sal$t1, datos1$sal$acum, type = "l", col= "red",
-         main = "Consumo Acumulado por coeficiente de decaimiento", 
-         xlab = "Tiempo [horas]", ylab = "Combustible [Kg]")
-    lines(datos2$sal$t1, datos2$sal$acum, col = "blue")
-    lines(datos3$sal$t1, datos3$sal$acum, col = "green")
-    legend("bottomright", legend = c("mala", "media", "buena"), 
-           col = c("red", "blue", "green"), lty = 1, lwd = 1, 
-           title = "Condición")
+  output$plot_media <- renderPlot({
+    ggplot(data = datos$sal)+
+      geom_line(mapping = aes(x=t, y=media, color = cond))+
+      labs(x = "Tiempo [horas]", y = "Flujo de Combustible [Kg/s]",
+           title ="MEDIA DE CONSUMO EN CADA VELOCIDAD")
   })
+  
+  #tab 3
+  output$plot_spd_3 <- renderPlot({
+    ggplot(data = datos$op)+
+      geom_line(mapping = aes(x=t, y=v))+
+      labs(x = "Tiempo [horas]", y = "Velocidad [nudos]",
+           title ="OPERACIÓN")
+  })
+  
+  output$plot_temp1 <- renderPlot({
+    ggplot(data = datos$sal)+
+      geom_point(mapping = aes(x=t, y=pred, color = Turbine_temp))+
+      labs(x = "Tiempo [horas]", y = "Flujo de Combustible [Kg/s]",
+           title ="FLUJO INSTANTANEO DE COMBUSTIBLE SEGÚN LA TEMPERATURA")
+  })
+  
+  output$plot_temp2 <- renderPlot({
+    ggplot(data = datos$sal)+
+      geom_point(mapping = aes(x=Turbine_temp, y=pred))+
+      facet_wrap(~Ship_spd, nrow = 2, scales = "free")+
+      labs(x = "Temperatura de la turbina [F]", y = "Flujo de Combustible [Kg/s]",
+           title ="COMPORTAMIENTO DEL FLUJO DE COMBUSTIBLE CON LA TEMPERATURA SEGÚN LA VELOCIDAD")
+  })
+  
   # impresion de valores
+  
   output$f_acum <- renderText({
     print(c(round(datos$sal$acum[length(datos$sal$acum)]), "Kg"))
     })
-  output$f_acum_2 <- renderTable(tabla(), digits = 3)
+  output$f_acum_2 <- renderTable(tabla(), digits = 0)
 }

@@ -1,0 +1,12 @@
+name: Naval_app
+title: Naval_app
+username:
+account: jhonatanz
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 3647120
+bundleId: 4237952
+url: https://jhonatanz.shinyapps.io/Naval_app/
+when: 1613605080.19681
+asMultiple: FALSE
+asStatic: FALSE
